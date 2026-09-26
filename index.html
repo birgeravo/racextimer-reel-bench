@@ -1704,7 +1704,7 @@ async function saveResult() {
   var docId = keySafe(UI.deviceKey) + '__test' + t.id;
   var doc = {
     device: UI.deviceKey, testId: t.id, testName: t.name, verdict: ps.verdict, note: ps.note, prefer: ps.prefer,
-    metrics: t.metrics ? t.metrics() : {}, ua: DEVICE.ua, viewport: DEVICE.viewport, dpr: DEVICE.dpr,
+    metrics: t.metrics ? t.metrics() : {}, settings: { scrollerMode: UI.scrollerMode, heightUnit: UI.heightUnit, snapStop: UI.snapStop, viewportFit: UI.viewportFit, commentsVariant: UI.commentsVariant, theme: UI.theme, shaderOn: UI.shaderOn, driftOn: UI.driftOn, blurOn: UI.blurOn, vtOn: UI.vtOn, doubleTapMs: UI.doubleTapMs, reducedMotionForce: UI.reducedMotionForce }, ua: DEVICE.ua, viewport: DEVICE.viewport, dpr: DEVICE.dpr,
     framed: DEVICE.framed, savedAt: new Date().toISOString()
   };
   SESSION_RESULTS[docId] = doc;
