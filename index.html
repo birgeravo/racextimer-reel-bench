@@ -58,9 +58,11 @@ html.doc-scroll .reel{ scroll-snap-align:start; }
 html.unit-vh .reel{ height:100vh; }
 html.unit-svh .reel{ height:100svh; }
 html.unit-dvh .reel{ height:100dvh; }
-.reel{ position:relative; width:100%; height:100svh; scroll-snap-align:start; overflow:hidden; background:var(--natt); -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+.reel{ position:relative; width:100%; height:100svh; scroll-snap-align:start; overflow:hidden; background:var(--natt); transition:transform .28s ease, border-radius .28s ease; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
 .reel.placeholder{ background:var(--torv); }
-.reel .reel-media{ position:absolute; inset:0; overflow:hidden; }
+.reel .reel-media{ position:absolute; inset:0; overflow:hidden; isolation:isolate; }
+.reel .reel-media img.contain, .reel .reel-media img.cover{ -webkit-transform:translateZ(0); will-change:transform; }
+.card-num{ position:absolute; top:calc(var(--st) + 60px); right:16px; z-index:7; font:600 11px 'Geist Mono',monospace; color:var(--lin); background:rgba(19,14,11,.55); padding:3px 7px; border-radius:6px; }
 .reel .reel-media img.contain{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; z-index:2; }
 .reel .reel-media img.cover{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:2; }
 .reel .reel-media img.bgblur{ position:absolute; inset:-20%; width:140%; height:140%; object-fit:cover; filter:blur(34px) brightness(.6) saturate(1.1); z-index:1; transform:scale(1.12); }
@@ -92,6 +94,7 @@ html.unit-dvh .reel{ height:100dvh; }
 .caption-stack{ position:absolute; left:16px; right:67px; bottom:calc(52px + var(--sb)); z-index:6; max-width:323px; }
 .cap-sentence{ font-family:'Geist',sans-serif; font-weight:600; font-size:15px; line-height:1.3; color:var(--lin); }
 .cap-meta{ font-size:13px; color:var(--aske); margin-top:2px; }
+.cap-more{ background:none; border:none; padding:2px 0 0; color:var(--aske); font-size:12px; font-family:inherit; }
 .cap-note{ font-size:13px; color:var(--lin); margin-top:6px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; opacity:.92; }
 .comment-peek{ position:absolute; left:16px; right:16px; bottom:calc(14px + var(--sb)); z-index:6; border-top:1px solid rgba(241,238,233,.18); padding-top:8px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .comment-peek .line{ font-size:13px; color:var(--lin); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
@@ -650,7 +653,8 @@ function buildCaptionHtml(r) {
     '<div class="cap-sentence">' + esc(sentence) + '</div>' +
     '<div class="cap-meta mono">' + esc(metaBits.join(' \u00b7 ')) + '</div>' +
     (r.note ? '<div class="cap-note">' + esc(r.note) + '</div>' : '') +
-    (r.captionLine ? '<div class="cap-note">' + esc(r.captionLine) + '</div>' : '')
+    (r.captionLine ? '<div class="cap-note">' + esc(r.captionLine) + '</div>' : '') +
+    '<button class="cap-more" data-open-comments="' + r.id + '">mer</button>'
   );
 }
 
@@ -684,9 +688,9 @@ function buildReelInner(r, idx) {
     html += '<div class="scene-safe"></div>';
   } else if (r.type === 'carousel') {
     html += '<div class="carousel-progress">' + r.cards.map(function () { return '<div class="seg"><i></i></div>'; }).join('') + '</div>';
-    html += '<div class="carousel-track">' + r.cards.map(function (ck) {
+    html += '<div class="carousel-track">' + r.cards.map(function (ck, ci) {
       var port = isPortrait(ck);
-      return '<div class="carousel-card"><div class="reel-media' + (UI.driftOn ? ' drift' : '') + (UI.blurOn ? '' : ' noblur') + '">' + buildMediaHtml(getPhotoUrl(ck), port) + '</div></div>';
+      return '<div class="carousel-card"><div class="reel-media' + (UI.driftOn ? ' drift' : '') + (UI.blurOn ? '' : ' noblur') + '">' + buildMediaHtml(getPhotoUrl(ck), port) + '</div><div class="card-num">' + (ci + 1) + ' / ' + r.cards.length + '</div></div>';
     }).join('') + '</div>';
   } else {
     // finish / finish-pb: animated scene
@@ -796,6 +800,7 @@ function wireReelInteractions() {
     wireTapGesture(sec, idx);
     var r = REELS[idx];
     if (r.type === 'carousel') wireCarousel(sec, idx);
+    qs('.caption-stack', sec).addEventListener('click', function (e) { e.stopPropagation(); openCommentSheet(REELS[idx].id); });
     qsa('[data-open-comments]', sec).forEach(function (b) {
       b.addEventListener('click', function (e) { e.stopPropagation(); openCommentSheet(+b.dataset.openComments); });
     });
@@ -985,6 +990,7 @@ function wireCarousel(sec, idx) {
   sec.addEventListener('pointerdown', function (e) {
     var rect = sec.getBoundingClientRect();
     var xr = (e.clientX - rect.left) / rect.width;
+    sec._quarter = 0;
     if (isOnActionZone(e.target)) return;
     sec._quarter = xr < 0.25 ? -1 : (xr > 0.75 ? 1 : 0);
     sec._qx = e.clientX; sec._qy = e.clientY;
@@ -1085,9 +1091,9 @@ function openCommentSheet(reelId) {
     '<div style="font-size:13px;line-height:1.4;"><div style="font-weight:600;">' + esc(r.sentence) + '</div>' +
     ((r.note || r.captionLine) ? '<div style="margin-top:4px;">' + esc(r.note || r.captionLine) + '</div>' : '') + '</div></div>';
   qs('.csheet-list', sheet).innerHTML = captionHead + '<h4 style="font-family:Geist Mono, monospace;color:var(--text2);font-size:11px;margin:10px 0 6px;">' + commentCounts[r.id] + ' kommentarer</h4>' +
-    r.comments.map(function (c) {
+    (r.comments.length ? r.comments.map(function (c) {
       return '<div class="c-row"><div class="c-av">' + esc(initials(c.name)) + '</div><div>' + esc(c.text) + '</div></div>';
-    }).join('');
+    }).join('') : '<div style="color:var(--text2);font-size:13px;padding:8px 0;">Ingen kommentarer enn\u00e5.</div>');
   var scroller = qs('.scroller');
   sheet.dataset.scrollTop = scroller.scrollTop;
   document.documentElement.classList.add('sheet-open');
@@ -1102,8 +1108,12 @@ function closeCommentSheet() {
   var idx = +sheet.dataset.for;
   if (reelEls[idx]) reelEls[idx].classList.remove('scaled-up');
   var scroller = qs('.scroller');
-  document.documentElement.classList.remove('sheet-open');
-  if (reelEls[idx]) scroller.scrollTop = reelEls[idx].offsetTop;
+  clearTimeout(closeCommentSheet._t);
+  closeCommentSheet._t = setTimeout(function () {
+    if (qs('#commentSheet').classList.contains('open')) return;
+    document.documentElement.classList.remove('sheet-open');
+    if (reelEls[idx]) scroller.scrollTop = reelEls[idx].offsetTop;
+  }, 300);
   if (REELS[idx] && REELS[idx].type === 'carousel' && !reelEls[idx].classList.contains('paused')) pauseCarouselAuto(reelEls[idx], false);
   sheet.classList.remove('open');
 }
