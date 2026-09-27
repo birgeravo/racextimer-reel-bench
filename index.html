@@ -63,9 +63,10 @@ html.unit-dvh .reel{ height:100dvh; }
 .reel .reel-media{ position:absolute; inset:0; overflow:hidden; }
 .reel .reel-media img.contain{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; z-index:2; }
 .reel .reel-media img.cover{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:2; }
-.reel .reel-media img.bgblur{ position:absolute; inset:-5%; width:110%; height:110%; object-fit:cover; filter:blur(34px) brightness(.6) saturate(1.1); z-index:1; transform:scale(1.12); }
+.reel .reel-media img.bgblur{ position:absolute; inset:-20%; width:140%; height:140%; object-fit:cover; filter:blur(34px) brightness(.6) saturate(1.1); z-index:1; transform:scale(1.12); }
 .reel .reel-media.drift img.cover, .reel .reel-media.drift img.bgblur{ animation:kenburns 8s ease-in-out infinite alternate; }
 .reel .reel-media.noblur img.bgblur{ display:none; }
+.reel.paused, .reel.paused *{ animation-play-state:paused !important; }
 @keyframes kenburns{ from{ transform:scale(1); } to{ transform:scale(1.04); } }
 
 /* scene safe area guide */
@@ -226,7 +227,10 @@ html.unit-dvh .reel{ height:100dvh; }
 #commentSheet .csheet-list{ overflow-y:auto; padding:0 14px 14px; flex:1; }
 #commentSheet .c-row{ display:flex; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px; }
 #commentSheet .c-row .c-av{ width:28px; height:28px; border-radius:999px; background:var(--fill); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex:0 0 auto; }
-.reel.scaled-up{ transform:scale(.86) translateY(-14%); transform-origin:top center; transition:transform .28s ease; border-radius:var(--r-panel); overflow:hidden; }
+/* Snap would re-align to the shrunken reel's transformed box, so it is off while the sheet is open. */
+html.sheet-open .scroller{ overflow:hidden; scroll-snap-type:none; }
+html.sheet-open .reel:not(.scaled-up){ visibility:hidden; }
+.reel.scaled-up{ transform:translateY(calc(var(--st) + 48px)) scale(.28); transform-origin:top center; transition:transform .28s ease; border-radius:var(--r-panel); overflow:hidden; }
 
 /* comments-ext (variant B) */
 .reel.comments-ext{ background:var(--torv); overflow-y:auto; padding:60px 16px 24px; }
@@ -239,7 +243,7 @@ html.unit-dvh .reel{ height:100dvh; }
 .fps-badge{ position:absolute; top:96px; right:16px; z-index:20; font-family:'Geist Mono',monospace; font-size:11px; background:rgba(19,14,11,.6); color:var(--lin); padding:4px 8px; border-radius:6px; }
 
 /* view-timeline transitions (test12), applied only if supported */
-html.vt-on .reel{ animation: vt-leave linear both; animation-timeline: view(); animation-range: cover 0% cover 45%; }
+html.vt-on .reel{ animation: vt-leave linear both; animation-timeline: view(); animation-range: exit 0% exit 100%; }
 @keyframes vt-leave{ from{ transform:scale(1); opacity:1; } to{ transform:scale(.94); opacity:.55; } }
 
 ::-webkit-scrollbar{ width:0; height:0; }
@@ -930,15 +934,20 @@ function wireCarousel(sec, idx) {
   if (native) {
     var t = null;
     track.addEventListener('touchstart', function () { st.programmatic = false; }, { passive: true });
+    var queued = false;
     track.addEventListener('scroll', function () {
       if (!st.programmatic) stopCarouselAuto(sec, r, true);
+      if (!queued) {
+        queued = true;
+        requestAnimationFrame(function () {
+          queued = false;
+          var w = track.clientWidth || 1;
+          var i = clamp(Math.round(track.scrollLeft / w), 0, cards.length - 1);
+          if (i !== st.idx) { st.idx = i; updateCarouselProgress(idx); }
+        });
+      }
       clearTimeout(t);
-      t = setTimeout(function () {
-        var w = track.clientWidth || 1;
-        var i = clamp(Math.round(track.scrollLeft / w), 0, cards.length - 1);
-        if (i !== st.idx) { st.idx = i; updateCarouselProgress(idx); }
-        st.programmatic = false;
-      }, 90);
+      t = setTimeout(function () { st.programmatic = false; }, 120);
     }, { passive: true });
   } else {
     var drag = { active: false, axis: null, startX: 0, startY: 0, dx: 0 };
@@ -991,7 +1000,7 @@ function wireCarousel(sec, idx) {
 }
 function goToCard(idx, i, instant) {
   var st = carouselState[idx]; if (!st) return;
-  var w = reelEls[idx].getBoundingClientRect().width || window.innerWidth;
+  var w = st.track.clientWidth || window.innerWidth;
   if (st.native) {
     st.programmatic = true;
     st.track.scrollTo({ left: i * w, behavior: instant ? 'auto' : 'smooth' });
@@ -1070,11 +1079,21 @@ function openCommentSheet(reelId) {
   var idx = REELS.findIndex(function (r) { return r.id === reelId; });
   var r = REELS[idx];
   var sheet = qs('#commentSheet');
-  qs('.csheet-list', sheet).innerHTML = '<h4 style="font-family:Geist Mono, monospace;color:var(--text2);font-size:11px;margin:6px 0;">' + commentCounts[r.id] + ' kommentarer</h4>' +
+  var p = personOf(r);
+  var captionHead = '<div class="c-caption" style="display:flex;gap:10px;padding:4px 0 12px;border-bottom:1px solid var(--border);">' +
+    '<img src="' + getAvatarUrl(r.person) + '" alt="" style="width:36px;height:36px;border-radius:999px;object-fit:cover;flex:0 0 auto;">' +
+    '<div style="font-size:13px;line-height:1.4;"><div style="font-weight:600;">' + esc(r.sentence) + '</div>' +
+    ((r.note || r.captionLine) ? '<div style="margin-top:4px;">' + esc(r.note || r.captionLine) + '</div>' : '') + '</div></div>';
+  qs('.csheet-list', sheet).innerHTML = captionHead + '<h4 style="font-family:Geist Mono, monospace;color:var(--text2);font-size:11px;margin:10px 0 6px;">' + commentCounts[r.id] + ' kommentarer</h4>' +
     r.comments.map(function (c) {
       return '<div class="c-row"><div class="c-av">' + esc(initials(c.name)) + '</div><div>' + esc(c.text) + '</div></div>';
     }).join('');
+  var scroller = qs('.scroller');
+  sheet.dataset.scrollTop = scroller.scrollTop;
+  document.documentElement.classList.add('sheet-open');
+  scroller.scrollTop = reelEls[idx].offsetTop;
   reelEls[idx].classList.add('scaled-up');
+  if (r.type === 'carousel') pauseCarouselAuto(reelEls[idx], true);
   sheet.classList.add('open');
   sheet.dataset.for = idx;
 }
@@ -1082,6 +1101,10 @@ function closeCommentSheet() {
   var sheet = qs('#commentSheet');
   var idx = +sheet.dataset.for;
   if (reelEls[idx]) reelEls[idx].classList.remove('scaled-up');
+  var scroller = qs('.scroller');
+  document.documentElement.classList.remove('sheet-open');
+  if (reelEls[idx]) scroller.scrollTop = reelEls[idx].offsetTop;
+  if (REELS[idx] && REELS[idx].type === 'carousel' && !reelEls[idx].classList.contains('paused')) pauseCarouselAuto(reelEls[idx], false);
   sheet.classList.remove('open');
 }
 function wireCommentSheetDrag() {
@@ -1460,6 +1483,8 @@ function startShaderLoop() {
   function draw(t) {
     if (!UI.shaderOn || document.hidden || GL.lost || !GL.ctx) { GL.running = false; return; }
     var dt = t - GL.lastT; GL.lastT = t;
+    var frozen = reelEls[activeIndex] && reelEls[activeIndex].classList.contains('paused');
+    if (!frozen) GL.clock = (GL.clock || 0) + dt;
     var fps = dt > 0 ? 1000 / dt : 0;
     var introPhase = (performance.now() - GL.activeSince) < 900;
     var bucket = introPhase ? GL.fpsIntro : GL.fpsIdle;
@@ -1467,7 +1492,7 @@ function startShaderLoop() {
     var gl = GL.ctx;
     gl.useProgram(GL.prog);
     gl.uniform2f(GL.loc.uRes, qs('#nordlysCanvas').width, qs('#nordlysCanvas').height);
-    gl.uniform1f(GL.loc.uTime, (t - GL.start) / 1000);
+    gl.uniform1f(GL.loc.uTime, (GL.clock || 0) / 1000);
     gl.uniform1f(GL.loc.uSeed, GL.cur.seed);
     gl.uniform3f(GL.loc.uA, GL.cur.a[0], GL.cur.a[1], GL.cur.a[2]);
     gl.uniform3f(GL.loc.uB, GL.cur.b[0], GL.cur.b[1], GL.cur.b[2]);
@@ -1710,7 +1735,7 @@ var TESTS = [
     preferLabels: ['Dark', 'Light'],
     controls: function () { return [{ type: 'select', label: 'Theme', options: ['dark', 'light'], get: function () { return UI.theme; }, set: function (v) { UI.theme = v; applyContainerModeClasses(); } }]; },
     metrics: function () { return { 'theme': UI.theme }; } },
-  { id: 12, name: 'View-timeline transition', instructions: 'A leaving reel should scale to 0.94 and dim via animation-timeline: view(). No fallback is applied where unsupported.',
+  { id: 12, name: 'View-timeline transition', instructions: 'Swipe slowly between reels. As a reel leaves the screen it should shrink slightly (to 94 %) and dim, driven by the scroll itself. At rest a reel must fill the screen with nothing of its neighbours showing.',
     controls: function () { return [{ type: 'toggle', label: 'Enable transition', get: function () { return UI.vtOn; }, set: function (v) { UI.vtOn = v; applyContainerModeClasses(); } }]; },
     metrics: function () { return { '@supports animation-timeline:view()': DEVICE.viewTimeline ? 'true' : 'false', 'enabled': UI.vtOn ? 'yes' : 'no' }; } }
 ];
