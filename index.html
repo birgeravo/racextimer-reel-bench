@@ -58,7 +58,7 @@ html.doc-scroll .reel{ scroll-snap-align:start; }
 html.unit-vh .reel{ height:100vh; }
 html.unit-svh .reel{ height:100svh; }
 html.unit-dvh .reel{ height:100dvh; }
-.reel{ position:relative; width:100%; height:100svh; scroll-snap-align:start; overflow:hidden; background:var(--natt); }
+.reel{ position:relative; width:100%; height:100svh; scroll-snap-align:start; overflow:hidden; background:var(--natt); -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
 .reel.placeholder{ background:var(--torv); }
 .reel .reel-media{ position:absolute; inset:0; overflow:hidden; }
 .reel .reel-media img.contain{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; z-index:2; }
@@ -88,17 +88,20 @@ html.unit-dvh .reel{ height:100dvh; }
 .action-rail .act.liked{ color:var(--glod); }
 
 /* caption */
-.caption-stack{ position:absolute; left:16px; right:67px; bottom:52px; z-index:6; max-width:323px; }
+.caption-stack{ position:absolute; left:16px; right:67px; bottom:calc(52px + var(--sb)); z-index:6; max-width:323px; }
 .cap-sentence{ font-family:'Geist',sans-serif; font-weight:600; font-size:15px; line-height:1.3; color:var(--lin); }
 .cap-meta{ font-size:13px; color:var(--aske); margin-top:2px; }
 .cap-note{ font-size:13px; color:var(--lin); margin-top:6px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; opacity:.92; }
-.comment-peek{ position:absolute; left:16px; right:16px; bottom:14px; z-index:6; border-top:1px solid rgba(241,238,233,.18); padding-top:8px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.comment-peek{ position:absolute; left:16px; right:16px; bottom:calc(14px + var(--sb)); z-index:6; border-top:1px solid rgba(241,238,233,.18); padding-top:8px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .comment-peek .line{ font-size:13px; color:var(--lin); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
 .comment-peek .line b{ font-weight:600; }
 .comment-peek .more{ font-size:12px; color:var(--aske); font-family:'Geist Mono',monospace; white-space:nowrap; background:none; border:none; }
 
 /* carousel */
-.carousel-track{ position:absolute; inset:0; display:flex; height:100%; width:100%; overflow:hidden; z-index:2; touch-action:pan-y; }
+.carousel-track{ position:absolute; inset:0; display:flex; height:100%; width:100%; z-index:2; touch-action:pan-y; }
+/* native engine: the browser scrolls the cards; the reel still clips */
+.carousel-track.native{ overflow-x:auto; overflow-y:hidden; scroll-snap-type:x mandatory; overscroll-behavior-x:contain; touch-action:auto; scrollbar-width:none; transform:none !important; }
+.carousel-track.native .carousel-card{ scroll-snap-align:start; scroll-snap-stop:always; }
 .carousel-card{ position:relative; flex:0 0 100%; height:100%; }
 .carousel-progress{ position:absolute; top:calc(var(--st) + 52px); left:16px; right:16px; z-index:8; display:flex; gap:4px; }
 .carousel-progress .seg{ flex:1; height:2px; background:rgba(241,238,233,.3); border-radius:2px; overflow:hidden; }
@@ -124,7 +127,7 @@ html.unit-dvh .reel{ height:100dvh; }
 /* test panel */
 #testPanel{ position:fixed; left:0; right:0; bottom:0; z-index:70; background:rgba(31,25,21,.92); backdrop-filter:blur(10px); border-top:1px solid var(--border); border-radius:var(--r-sheet) var(--r-sheet) 0 0; padding-bottom:var(--sb); max-height:66vh; display:flex; flex-direction:column; transition:transform .25s ease; color:var(--lin); font-size:13px; }
 [data-theme="light"] #testPanel{ background:rgba(255,255,255,.92); color:var(--kull); }
-#testPanel.collapsed{ transform:translateY(calc(100% - 40px)); }
+#testPanel.collapsed{ transform:translateY(100%); }
 #testPanelHandle{ height:40px; display:flex; align-items:center; justify-content:center; gap:8px; cursor:pointer; flex:0 0 auto; }
 #testPanelHandle .grip{ width:36px; height:4px; border-radius:2px; background:var(--text2); }
 #testPanelHandle .tp-label{ position:absolute; left:14px; font-family:'Geist Mono',monospace; font-size:11px; color:var(--text2); }
@@ -257,7 +260,7 @@ html.vt-on .reel{ animation: vt-leave linear both; animation-timeline: view(); a
   <div id="topBar">
     <div class="tb-left"><span class="tb-logo">RaceExTimer</span></div>
     <div class="tb-mid"><span class="live-dot"></span>LIVE <span id="liveCount">2</span></div>
-    <div class="tb-right"><button id="btnTests">Tests</button><button id="btnResults">Results</button></div>
+    <div class="tb-right"><button id="btnPanel">Panel</button><button id="btnTests">Tests</button><button id="btnResults">Results</button></div>
   </div>
 
   <div id="frameBanner" hidden>
@@ -600,7 +603,8 @@ var UI = {
   blurOn: true,
   shaderOn: true,
   vtOn: false,
-  reducedMotionForce: false
+  reducedMotionForce: false,
+  carouselEngine: 'native' // native | js
 };
 function loadUiPrefs() {
   try {
@@ -802,8 +806,10 @@ function isOnActionZone(target) {
 
 function wireTapGesture(sec, idx) {
   var state = { downT: 0, downX: 0, downY: 0, holdTimer: null, holding: false, lastTapT: 0, lastTapX: 0, lastTapY: 0, tapTimer: null, moved: false };
-  var hit = el('div'); hit.style.cssText = 'position:absolute;inset:0;z-index:10;';
-  sec.appendChild(hit);
+  // Listen on the reel itself: an overlay on top would swallow the carousel's
+  // own touches, so a horizontal swipe could never reach the cards.
+  var hit = sec;
+  sec.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   hit.addEventListener('pointerdown', function (e) {
     if (isOnActionZone(e.target)) return;
     var rect = sec.getBoundingClientRect();
@@ -841,7 +847,7 @@ function wireTapGesture(sec, idx) {
       }, UI.doubleTapMs);
     }
   });
-  hit.addEventListener('pointercancel', function () { clearTimeout(state.holdTimer); });
+  hit.addEventListener('pointercancel', function () { clearTimeout(state.holdTimer); state.moved = true; if (state.holding) { setPaused(sec, idx, false); state.holding = false; } });
 }
 function logAction(sec, msg) {
   var lg = qs('.action-log', sec); if (!lg) return;
@@ -895,58 +901,104 @@ function burstParticles(sec, x, y) {
 
 // ============ carousel (test 3) ============
 var carouselState = {}; // secId -> {track, idx, cards, autoTimer, autoStoppedByUser, activeSegAnimEl}
+var carouselLeaks = { swipes: 0, leaks: 0 };
 function wireCarousel(sec, idx) {
   var r = REELS[idx];
   var track = qs('.carousel-track', sec);
   var cards = qsa('.carousel-card', track);
-  var st = { track: track, cards: cards, idx: 0, autoStopped: false, w: 0 };
+  var native = UI.carouselEngine === 'native';
+  track.classList.toggle('native', native);
+  var st = { track: track, cards: cards, idx: 0, autoStopped: false, w: 0, native: native, programmatic: false };
   carouselState[idx] = st;
-  var drag = { active: false, axis: null, startX: 0, startY: 0, dx: 0 };
-  track.addEventListener('touchstart', function (e) {
-    var t = e.touches[0];
-    drag.active = true; drag.axis = null; drag.startX = t.clientX; drag.startY = t.clientY; drag.dx = 0;
-    st.w = sec.getBoundingClientRect().width;
+  var outer = qs('.scroller');
+  // Diagonal leak: a gesture that moved the cards AND the feed.
+  var probe = { outerTop: 0, left: 0, cardIdx: 0 };
+  track.addEventListener('touchstart', function () {
+    probe.outerTop = outer.scrollTop; probe.left = track.scrollLeft; probe.cardIdx = st.idx;
   }, { passive: true });
-  track.addEventListener('touchmove', function (e) {
-    if (!drag.active) return;
-    var t = e.touches[0];
-    var dx = t.clientX - drag.startX, dy = t.clientY - drag.startY;
-    if (!drag.axis && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
-      drag.axis = Math.abs(dx) > Math.abs(dy) * 1.15 ? 'x' : 'y';
-      if (drag.axis === 'x') { stopCarouselAuto(sec, r, true); }
-    }
-    if (drag.axis === 'x') {
-      e.preventDefault();
-      drag.dx = dx;
-      track.style.transform = 'translateX(' + (-st.idx * st.w + dx) + 'px)';
-    } else if (drag.axis === 'y') {
-      logAxisEvent(idx, 'vertical drag passed through inside carousel (ok)');
-    }
-  }, { passive: false });
   track.addEventListener('touchend', function () {
-    if (!drag.active) return;
-    drag.active = false;
-    if (drag.axis === 'x') {
-      if (Math.abs(drag.dx) > st.w * 0.18) st.idx += drag.dx < 0 ? 1 : -1;
-      st.idx = clamp(st.idx, 0, cards.length - 1);
-      goToCard(idx, st.idx);
-    }
-  });
+    setTimeout(function () {
+      var movedCards = st.native ? Math.abs(track.scrollLeft - probe.left) > 4 : st.idx !== probe.cardIdx;
+      var movedFeed = Math.abs(outer.scrollTop - probe.outerTop) > 2;
+      if (movedCards) {
+        carouselLeaks.swipes++;
+        if (movedFeed) { carouselLeaks.leaks++; logAxisEvent(idx, 'horizontal swipe also moved the feed ' + Math.round(outer.scrollTop - probe.outerTop) + 'px'); }
+      }
+    }, 450);
+  }, { passive: true });
+
+  if (native) {
+    var t = null;
+    track.addEventListener('touchstart', function () { st.programmatic = false; }, { passive: true });
+    track.addEventListener('scroll', function () {
+      if (!st.programmatic) stopCarouselAuto(sec, r, true);
+      clearTimeout(t);
+      t = setTimeout(function () {
+        var w = track.clientWidth || 1;
+        var i = clamp(Math.round(track.scrollLeft / w), 0, cards.length - 1);
+        if (i !== st.idx) { st.idx = i; updateCarouselProgress(idx); }
+        st.programmatic = false;
+      }, 90);
+    }, { passive: true });
+  } else {
+    var drag = { active: false, axis: null, startX: 0, startY: 0, dx: 0 };
+    track.addEventListener('touchstart', function (e) {
+      var tt = e.touches[0];
+      drag.active = true; drag.axis = null; drag.startX = tt.clientX; drag.startY = tt.clientY; drag.dx = 0;
+      st.w = sec.getBoundingClientRect().width;
+    }, { passive: true });
+    track.addEventListener('touchmove', function (e) {
+      if (!drag.active) return;
+      var tt = e.touches[0];
+      var dx = tt.clientX - drag.startX, dy = tt.clientY - drag.startY;
+      if (!drag.axis && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+        drag.axis = Math.abs(dx) > Math.abs(dy) * 1.15 ? 'x' : 'y';
+        if (drag.axis === 'x') { stopCarouselAuto(sec, r, true); }
+      }
+      if (drag.axis === 'x') {
+        e.preventDefault();
+        drag.dx = dx;
+        track.style.transition = 'none';
+        track.style.transform = 'translateX(' + (-st.idx * st.w + dx) + 'px)';
+      }
+    }, { passive: false });
+    track.addEventListener('touchend', function () {
+      if (!drag.active) return;
+      drag.active = false;
+      if (drag.axis === 'x') {
+        if (Math.abs(drag.dx) > st.w * 0.18) st.idx += drag.dx < 0 ? 1 : -1;
+        st.idx = clamp(st.idx, 0, cards.length - 1);
+        goToCard(idx, st.idx);
+      }
+    });
+  }
   // quarter taps
   sec.addEventListener('pointerdown', function (e) {
     var rect = sec.getBoundingClientRect();
     var xr = (e.clientX - rect.left) / rect.width;
     if (isOnActionZone(e.target)) return;
-    if (xr < 0.25) { stopCarouselAuto(sec, r, true); st.idx = clamp(st.idx - 1, 0, cards.length - 1); goToCard(idx, st.idx); }
-    else if (xr > 0.75) { stopCarouselAuto(sec, r, true); st.idx = clamp(st.idx + 1, 0, cards.length - 1); goToCard(idx, st.idx); }
+    sec._quarter = xr < 0.25 ? -1 : (xr > 0.75 ? 1 : 0);
+    sec._qx = e.clientX; sec._qy = e.clientY;
+  }, true);
+  sec.addEventListener('pointerup', function (e) {
+    var q = sec._quarter; sec._quarter = 0;
+    if (!q || Math.abs(e.clientX - sec._qx) > 10 || Math.abs(e.clientY - sec._qy) > 10) return;
+    stopCarouselAuto(sec, r, true);
+    st.idx = clamp(st.idx + q, 0, cards.length - 1);
+    goToCard(idx, st.idx);
   }, true);
   goToCard(idx, 0, true);
 }
 function goToCard(idx, i, instant) {
   var st = carouselState[idx]; if (!st) return;
-  var w = qs('.reel', document).getBoundingClientRect ? reelEls[idx].getBoundingClientRect().width : window.innerWidth;
-  st.track.style.transition = instant ? 'none' : 'transform .28s ease';
-  st.track.style.transform = 'translateX(' + (-i * w) + 'px)';
+  var w = reelEls[idx].getBoundingClientRect().width || window.innerWidth;
+  if (st.native) {
+    st.programmatic = true;
+    st.track.scrollTo({ left: i * w, behavior: instant ? 'auto' : 'smooth' });
+  } else {
+    st.track.style.transition = instant ? 'none' : 'transform .28s ease';
+    st.track.style.transform = 'translateX(' + (-i * w) + 'px)';
+  }
   st.idx = i;
   updateCarouselProgress(idx);
 }
@@ -1165,7 +1217,7 @@ function playFinishScene(sec, r) {
 
   var cols = qsa('.fs-digit-col:not(.static)', container);
   cols.forEach(fillDigitStrip);
-  cols.forEach(function (c) { c.style.transform = 'translateY(0)'; var strip = qs('.strip', c); strip.style.transform = 'translateY(0)'; });
+  cols.forEach(function (c) { c.style.transform = 'translateY(0)'; var strip = qs('.strip', c); strip.style.transform = 'translateY(' + (reduced ? -(+c.dataset.target) * 44 : 0) + 'px)'; });
 
   var hist = fieldHistogram(40);
   var myBucket = bucketOf(timeToSec(p.finish), hist);
@@ -1615,9 +1667,12 @@ var TESTS = [
       { type: 'button', label: 'Reset tally', onClick: function () { flingStats.flings = 0; flingStats.skipped = 0; } }
     ]; },
     metrics: function () { return { 'flings': flingStats.flings, 'skipped (>1 reel)': flingStats.skipped, 'pass': flingStats.flings ? (flingStats.skipped === 0 ? 'yes' : 'no') : '\u2014' }; } },
-  { id: 3, name: 'Nested carousel', instructions: 'Open a carousel reel (e.g. Nora\u2019s photo dump). Swipe horizontally on cards, tap left/right quarters, and try a diagonal swipe to check axis handling.',
-    controls: function () { return [{ type: 'button', label: 'Clear log', onClick: function () { axisEvents = []; } }]; },
-    metrics: function () { return { 'axis events logged': axisEvents.length }; },
+  { id: 3, name: 'Nested carousel', instructions: 'Open a carousel reel (Nora\u2019s photo dump is reel 8). Swipe sideways through all cards, tap the left/right quarters, try sloppy diagonal swipes. Compare the native and js engines.',
+    controls: function () { return [
+      { type: 'select', label: 'Carousel engine', options: ['native', 'js'], get: function () { return UI.carouselEngine; }, set: function (v) { UI.carouselEngine = v; renderFeed(); } },
+      { type: 'button', label: 'Clear log', onClick: function () { axisEvents = []; carouselLeaks.swipes = 0; carouselLeaks.leaks = 0; } }
+    ]; },
+    metrics: function () { var st = carouselState[activeIndex]; return { 'engine': UI.carouselEngine, 'card now': st ? (st.idx + 1) + ' / ' + st.cards.length : '\u2014', 'horizontal swipes': carouselLeaks.swipes, 'swipes that also moved feed': carouselLeaks.leaks }; },
     log: function () { return axisEvents; } },
   { id: 4, name: 'Tap / double-tap / hold', instructions: 'Tap center to pause/resume, double-tap to cheer, press and hold to pause while held.',
     controls: function () { return [{ type: 'slider', label: 'Double-tap window (ms)', min: 150, max: 350, step: 10, get: function () { return UI.doubleTapMs; }, set: function (v) { UI.doubleTapMs = v; } }]; },
@@ -1704,7 +1759,7 @@ async function saveResult() {
   var docId = keySafe(UI.deviceKey) + '__test' + t.id;
   var doc = {
     device: UI.deviceKey, testId: t.id, testName: t.name, verdict: ps.verdict, note: ps.note, prefer: ps.prefer,
-    metrics: t.metrics ? t.metrics() : {}, settings: { scrollerMode: UI.scrollerMode, heightUnit: UI.heightUnit, snapStop: UI.snapStop, viewportFit: UI.viewportFit, commentsVariant: UI.commentsVariant, theme: UI.theme, shaderOn: UI.shaderOn, driftOn: UI.driftOn, blurOn: UI.blurOn, vtOn: UI.vtOn, doubleTapMs: UI.doubleTapMs, reducedMotionForce: UI.reducedMotionForce }, ua: DEVICE.ua, viewport: DEVICE.viewport, dpr: DEVICE.dpr,
+    metrics: t.metrics ? t.metrics() : {}, settings: { scrollerMode: UI.scrollerMode, heightUnit: UI.heightUnit, snapStop: UI.snapStop, viewportFit: UI.viewportFit, commentsVariant: UI.commentsVariant, theme: UI.theme, shaderOn: UI.shaderOn, driftOn: UI.driftOn, blurOn: UI.blurOn, vtOn: UI.vtOn, doubleTapMs: UI.doubleTapMs, reducedMotionForce: UI.reducedMotionForce, carouselEngine: UI.carouselEngine }, ua: DEVICE.ua, viewport: DEVICE.viewport, dpr: DEVICE.dpr,
     framed: DEVICE.framed, savedAt: new Date().toISOString()
   };
   SESSION_RESULTS[docId] = doc;
@@ -1769,6 +1824,7 @@ function renderTestsList() {
 }
 function wireTopBarButtons() {
   qs('#testPanelHandle').addEventListener('click', function () { qs('#testPanel').classList.toggle('collapsed'); });
+  qs('#btnPanel').addEventListener('click', function () { qs('#testPanel').classList.toggle('collapsed'); });
   qsa('.verdict-row .btn').forEach(function (b) {
     b.addEventListener('click', function () {
       var t = TESTS[UI.testIndex]; var ps = psFor(t.id); ps.verdict = b.dataset.v; renderTestPanel();
