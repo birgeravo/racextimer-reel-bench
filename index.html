@@ -58,6 +58,9 @@ html.doc-scroll .reel{ scroll-snap-align:start; }
 html.unit-vh .reel{ height:100vh; }
 html.unit-svh .reel{ height:100svh; }
 html.unit-dvh .reel{ height:100dvh; }
+/* fill: each reel is the scroller's own height, whatever the toolbar does */
+html.unit-fill .reel{ height:100%; }
+.reel-inner{ position:absolute; inset:0; }
 .reel{ position:relative; width:100%; height:100svh; scroll-snap-align:start; overflow:hidden; background:var(--natt); transition:transform .28s ease, border-radius .28s ease; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
 .reel.placeholder{ background:var(--torv); }
 .reel .reel-media{ position:absolute; inset:0; overflow:hidden; isolation:isolate; }
@@ -246,7 +249,8 @@ html.sheet-open .reel:not(.scaled-up){ visibility:hidden; }
 .fps-badge{ position:absolute; top:96px; right:16px; z-index:20; font-family:'Geist Mono',monospace; font-size:11px; background:rgba(19,14,11,.6); color:var(--lin); padding:4px 8px; border-radius:6px; }
 
 /* view-timeline transitions (test12), applied only if supported */
-html.vt-on .reel{ animation: vt-leave linear both; animation-timeline: view(); animation-range: exit 0% exit 100%; }
+/* Animate an inner layer: snap measures the reel's transformed box, so transforming the reel itself makes the feed drift. */
+html.vt-on .reel > .reel-inner{ animation: vt-leave linear both; animation-timeline: view(); animation-range: exit 0% exit 100%; }
 @keyframes vt-leave{ from{ transform:scale(1); opacity:1; } to{ transform:scale(.94); opacity:.55; } }
 
 ::-webkit-scrollbar{ width:0; height:0; }
@@ -601,7 +605,7 @@ var UI = {
   theme: 'dark',
   commentsVariant: 'A',
   scrollerMode: 'fixed',   // fixed | doc
-  heightUnit: 'svh',       // vh | svh | dvh
+  heightUnit: 'fill',       // vh | svh | dvh
   snapStop: false,
   guideLines: false,
   viewportFit: true,
@@ -619,6 +623,7 @@ function loadUiPrefs() {
     if (raw) Object.assign(UI, JSON.parse(raw));
   } catch (e) { /* ignore */ }
   if (!UI.deviceKey) UI.deviceKey = DEVICE.guessKey;
+  if (!UI.fillMigrated) { UI.heightUnit = 'fill'; UI.fillMigrated = true; }
 }
 function saveUiPrefs() {
   try { localStorage.setItem('rxt-bench-ui', JSON.stringify(UI)); } catch (e) { /* ignore */ }
@@ -706,7 +711,7 @@ function buildReelInner(r, idx) {
   html += '<canvas class="particle-canvas"></canvas>';
   html += '<div class="pause-flag"><svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg></div>';
   html += '<div class="action-log"></div>';
-  return html;
+  return '<div class="reel-inner">' + html + '</div>';
 }
 
 function buildCommentsExtInner(r) {
@@ -739,7 +744,7 @@ function renderFeed() {
 function applyContainerModeClasses() {
   var html = document.documentElement;
   html.classList.toggle('doc-scroll', UI.scrollerMode === 'doc');
-  html.classList.remove('unit-vh', 'unit-svh', 'unit-dvh');
+  html.classList.remove('unit-vh', 'unit-svh', 'unit-dvh', 'unit-fill');
   html.classList.add('unit-' + UI.heightUnit);
   qs('.scroller').classList.toggle('stop-always', UI.snapStop);
   qs('#app').classList.toggle('guide-lines', UI.guideLines);
@@ -1574,13 +1579,15 @@ function renderLog(lines) {
 }
 
 // ============ test 1: height stability ============
-var HS = { innerMin: Infinity, innerMax: -Infinity, vvMin: Infinity, vvMax: -Infinity, baselineInner: window.innerHeight, toolbarCollapsed: false, samples: 0 };
+var HS = { innerMin: Infinity, innerMax: -Infinity, vvMin: Infinity, vvMax: -Infinity, baselineInner: window.innerHeight, toolbarCollapsed: false, samples: 0, gapMax: 0 };
 function readProbe(id) { var p = qs(id); return p ? Math.round(p.getBoundingClientRect().height) : 0; }
 function sampleHeights() {
   var ih = window.innerHeight;
   HS.innerMin = Math.min(HS.innerMin, ih); HS.innerMax = Math.max(HS.innerMax, ih);
   if (window.visualViewport) { var vv = window.visualViewport.height; HS.vvMin = Math.min(HS.vvMin, vv); HS.vvMax = Math.max(HS.vvMax, vv); }
   if (ih > HS.baselineInner + 40) HS.toolbarCollapsed = true;
+  var sc = qs('.scroller'), rl = reelEls[activeIndex];
+  if (sc && rl && UI.scrollerMode === 'fixed') HS.gapMax = Math.max(HS.gapMax, Math.abs(Math.round(sc.clientHeight - rl.getBoundingClientRect().height)));
   HS.samples++;
 }
 function setupHeightStabilityTracking() {
@@ -1684,16 +1691,18 @@ var TESTS = [
   { id: 1, name: 'Height stability', instructions: 'Scroll the feed. Watch innerHeight / visualViewport / vh-svh-dvh probes and whether the browser toolbar collapses.',
     controls: function () { return [
       { type: 'select', label: 'Scroller', options: ['fixed', 'doc'], get: function () { return UI.scrollerMode; }, set: function (v) { UI.scrollerMode = v; renderFeed(); } },
-      { type: 'select', label: 'Reel height unit', options: ['vh', 'svh', 'dvh'], get: function () { return UI.heightUnit; }, set: function (v) { UI.heightUnit = v; applyContainerModeClasses(); } },
+      { type: 'select', label: 'Reel height unit', options: ['fill', 'vh', 'svh', 'dvh'], get: function () { return UI.heightUnit; }, set: function (v) { UI.heightUnit = v; applyContainerModeClasses(); } },
       { type: 'toggle', label: 'Safe-area guide lines', get: function () { return UI.guideLines; }, set: function (v) { UI.guideLines = v; applyContainerModeClasses(); } },
       { type: 'toggle', label: 'viewport-fit=cover', get: function () { return UI.viewportFit; }, set: function (v) { UI.viewportFit = v; setViewportFit(v); } },
-      { type: 'button', label: 'Reset min/max', onClick: function () { HS.innerMin = Infinity; HS.innerMax = -Infinity; HS.vvMin = Infinity; HS.vvMax = -Infinity; HS.toolbarCollapsed = false; HS.baselineInner = window.innerHeight; } }
+      { type: 'button', label: 'Reset min/max', onClick: function () { HS.innerMin = Infinity; HS.innerMax = -Infinity; HS.vvMin = Infinity; HS.vvMax = -Infinity; HS.toolbarCollapsed = false; HS.gapMax = 0; HS.baselineInner = window.innerHeight; } }
     ]; },
     metrics: function () { return {
       'innerHeight now': window.innerHeight, 'innerHeight min/max': HS.innerMin + ' / ' + HS.innerMax,
       'visualViewport now': window.visualViewport ? Math.round(window.visualViewport.height) : 'n/a',
       'visualViewport min/max': (HS.vvMin === Infinity ? 'n/a' : HS.vvMin + ' / ' + HS.vvMax),
       '100vh probe': readProbe('#probeVh') + 'px', '100svh probe': readProbe('#probeSvh') + 'px', '100dvh probe': readProbe('#probeDvh') + 'px',
+      'scroller height': qs('.scroller').clientHeight + 'px', 'reel height': (reelEls[activeIndex] ? Math.round(reelEls[activeIndex].getBoundingClientRect().height) : 0) + 'px',
+      'reel vs scroller gap (max seen)': HS.gapMax + 'px',
       'toolbar collapsed seen': HS.toolbarCollapsed ? 'yes' : 'no', 'samples': HS.samples
     }; } },
   { id: 2, name: 'One reel per fling', instructions: 'Fling vertically. A hard fling should never move more than one reel. Toggle scroll-snap-stop and compare.',
